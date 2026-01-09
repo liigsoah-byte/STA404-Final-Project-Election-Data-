@@ -1,0 +1,93 @@
+---
+title: "project manipulation"
+author: "Allison Liigsoo"
+date: "2024-11-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(magrittr)
+library(maps)
+library(ggplot2)
+library(sf)
+library(extrafont)
+library(ggtext)
+```
+
+##DATA MANIPULATION##
+
+```{r}
+# read in map, change crs to 2163
+us_map <- read_sf("s_05mr24/") 
+
+
+#create alaska, and scale and rotate
+alaska <- us_map %>%
+  filter(STATE == "AK") %>%
+  mutate(geometry = st_geometry(.) * 0.4) %>% 
+  mutate(geometry = st_geometry(.) + c(0, 100000)) %>% 
+  st_set_crs(st_crs(us_map))
+
+#create hawaii, and scale and rotate
+hawaii <- us_map %>%
+  filter(STATE == "HI") %>%
+  mutate(geometry = st_geometry(.) + c(3000000, 0)) %>%
+  st_set_crs(st_crs(us_map))
+
+#combine all 50 states into one map
+mainland <- us_map %>% filter(!STATE %in% c("AK", "HI"))
+us_map_modified <- bind_rows(mainland, alaska, hawaii)
+
+#filter out all territories
+us_50_states <- us_map_modified %>% 
+  filter(!STATE %in% c("PR", "GU", "VI", "AS", "MP", "FM", "MH", "PW"))
+
+#read and join the data
+data = read_csv("1976-2020-president.csv") %>% 
+  select(year, state, state_po, candidatevotes, totalvotes, party_simplified) %>% 
+  mutate(state = tolower(state))
+full_data = full_join(data, us_50_states, by = c("state_po" = "STATE"))
+
+# create electoral votes data
+electoral_votes_data = data.frame(state_po = c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"),
+                             electoral_votes = c(9, 3, 11, 6, 55, 9, 7, 3, 29, 16, 4, 4, 20, 11, 6, 6, 8, 8, 4, 10, 11, 16, 10, 6, 10, 3, 5, 6, 4, 14, 29, 29, 18, 18, 3, 20, 11, 9, 5, 9, 7, 6, 11, 10, 3, 4, 9, 3, 3, 3))
+
+#join the data
+full_data = full_join(full_data, electoral_votes_data, by = "state_po")
+
+#create different regions
+regions <- data.frame(
+  state_po = c("ME", "NH", "VT", "MA", "RI", "CT", # Northeast
+               "NY", "NJ", "PA", 
+               "OH", "MI", "IN", "IL", "WI", "MN", # Midwest
+               "IA", "MO", "ND", "SD", "NE", "KS",
+               "DE", "MD", "VA", "WV", "KY", "NC", # Southeast
+               "SC", "GA", "FL", "AL", "MS", "TN", "LA", "AR",
+               "OK", "TX", "NM", "AZ", "CO", "UT", # Southwest
+               "NV", "CA", "HI", 
+               "MT", "WY", "ID", "WA", "OR", "AK"), # Northwest
+  region = c(rep("Northeast", 9), 
+             rep("Midwest", 12), 
+             rep("Southeast", 13), 
+             rep("Southwest", 7), 
+             rep("Northwest", 9)) # Updated to match the total number of rows
+)
+full_data = full_join(full_data, regions, by = "state_po") %>% 
+  select(year, state_po, candidatevotes, totalvotes, party_simplified, LON, LAT, region)
+
+# use max votes to find out which party won the state
+win_state = full_data %>% 
+  group_by(year, state_po) %>% 
+  filter(candidatevotes == max(candidatevotes)) %>% 
+  ungroup()
+```
+
+
+```{r}
+save(full_data, file = "full_data.Rdata")
+save(win_state, file = "win_state.Rdata")
+save(electoral_votes_data, file = "electoral_votes_data.Rdata")
+```
